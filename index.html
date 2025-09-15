@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Алгоритм сжатия чисел 1-300</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background: #f9f9f9;
+            border-radius: 8px;
+            border-left: 4px solid #007acc;
+        }
+        .input-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        textarea {
+            height: 80px;
+            resize: vertical;
+        }
+        button {
+            background: #007acc;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        button:hover {
+            background: #005a9e;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background: #e8f4f8;
+            border-radius: 4px;
+            border: 1px solid #b8e0ea;
+        }
+        .test-results {
+            margin-top: 20px;
+        }
+        .test-case {
+            background: white;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #e0e0e0;
+        }
+        .test-case h4 {
+            margin-top: 0;
+            color: #333;
+        }
+        .compression-ratio {
+            font-weight: bold;
+            color: #007acc;
+        }
+        .good-ratio {
+            color: #28a745;
+        }
+        .bad-ratio {
+            color: #dc3545;
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .stat-item {
+            background: #f0f8ff;
+            padding: 10px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Алгоритм сжатия множества чисел 1-300</h1>
+        
+        <div class="section">
+            <h2>Ручное тестирование</h2>
+            <div class="input-group">
+                <label for="inputNumbers">Введите числа через запятую (1-300):</label>
+                <textarea id="inputNumbers" placeholder="Например: 1,5,10,25,100,200,300"></textarea>
+            </div>
+            <button onclick="testCompression()">Сжать</button>
+            <button onclick="testDecompression()">Разжать</button>
+            <button onclick="generateRandom()">Случайные числа</button>
+            <div id="manualResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>Автоматические тесты</h2>
+            <button onclick="runAllTests()">Запустить все тесты</button>
+            <div id="testResults" class="test-results"></div>
+        </div>
+    </div>
+
+    <script>
+        // Основной класс для сжатия чисел
+        class NumberSetCompressor {
+            constructor() {
+                // ASCII символы для Base64 кодирования (исключаем запятые и пробелы)
+                this.base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+            }
+
+            // Простая сериализация для сравнения
+            simpleSerialize(numbers) {
+                return numbers.sort((a, b) => a - b).join(',');
+            }
+
+            // Главная функция сериализации - выбирает лучший метод
+            serialize(numbers) {
+                if (!numbers || numbers.length === 0) return '';
+                
+                // Убираем дубликаты и сортируем
+                const uniqueNumbers = [...new Set(numbers)].sort((a, b) => a - b);
+                
+                // Пробуем разные методы сжатия
+                const bitmapResult = this.serializeBitmap(uniqueNumbers);
+                const rangeResult = this.serializeRanges(uniqueNumbers);
+                const hybridResult = this.serializeHybrid(uniqueNumbers);
+                
+                // Выбираем самый короткий результат
+                const results = [
+                    { method: 'B', data: bitmapResult },
+                    { method: 'R', data: rangeResult },
+                    { method: 'H', data: hybridResult }
+                ];
+                
+                const best = results.reduce((min, current) => 
+                    current.data.length < min.data.length ? current : min
+                );
+                
+                return best.method + best.data;
+            }
+
+            // Десериализация
+            deserialize(compressed) {
+                if (!compressed) return [];
+                
+                const method = compressed[0];
+                const data = compressed.slice(1);
+                
+                switch (method) {
+                    case 'B': return this.deserializeBitmap(data);
+                    case 'R': return this.deserializeRanges(data);
+                    case 'H': return this.deserializeHybrid(data);
+                    default: throw new Error('Неизвестный метод сжатия');
+                }
+            }
+
+            // Метод 1: Битовая карта + Base64
+            serializeBitmap(numbers) {
+                const bitmap = new Array(301).fill(false); // 0-300, используем индексы 1-300
+                numbers.forEach(num => bitmap[num] = true);
+                
+                // Конвертируем в строку битов
+                let bitString = '';
+                for (let i = 1; i <= 300; i++) {
+                    bitString += bitmap[i] ? '1' : '0';
+                }
+                
+                // Группируем по 6 битов и конвертируем в Base64
+                let result = '';
+                for (let i = 0; i < bitString.length; i += 6) {
+                    const chunk = bitString.slice(i, i + 6).padEnd(6, '0');
+                    const value = parseInt(chunk, 2);
+                    result += this.base64Chars[value];
+                }
+                
+                return result;
+            }
+
+            deserializeBitmap(data) {
+                let bitString = '';
+                
+                // Декодируем из Base64
+                for (let char of data) {
+                    const value = this.base64Chars.indexOf(char);
+                    bitString += value.toString(2).padStart(6, '0');
+                }
+                
+                // Извлекаем числа
+                const numbers = [];
+                for (let i = 1; i <= 300 && i - 1 < bitString.length; i++) {
+                    if (bitString[i - 1] === '1') {
+                        numbers.push(i);
+                    }
+                }
+                
+                return numbers;
+            }
+
+            // Метод 2: Кодирование диапазонов
+            serializeRanges(numbers) {
+                if (numbers.length === 0) return '';
+                
+                const ranges = [];
+                let start = numbers[0];
+                let end = numbers[0];
+                
+                for (let i = 1; i < numbers.length; i++) {
+                    if (numbers[i] === end + 1) {
+                        end = numbers[i];
+                    } else {
+                        ranges.push(start === end ? start.toString() : `${start}-${end}`);
+                        start = end = numbers[i];
+                    }
+                }
+                ranges.push(start === end ? start.toString() : `${start}-${end}`);
+                
+                return ranges.join('.');
+            }
+
+            deserializeRanges(data) {
+                if (!data) return [];
+                
+                const numbers = [];
+                const ranges = data.split('.');
+                
+                for (let range of ranges) {
+                    if (range.includes('-')) {
+                        const [start, end] = range.split('-').map(Number);
+                        for (let i = start; i <= end; i++) {
+                            numbers.push(i);
+                        }
+                    } else {
+                        numbers.push(Number(range));
+                    }
+                }
+                
+                return numbers.sort((a, b) => a - b);
+            }
+
+            // Метод 3: Гибридный подход
+            serializeHybrid(numbers) {
+                if (numbers.length === 0) return '';
+                
+                // Находим диапазоны длиной 3+ и отдельные числа
+                const ranges = [];
+                const singles = [];
+                
+                let i = 0;
+                while (i < numbers.length) {
+                    let start = i;
+                    while (i + 1 < numbers.length && numbers[i + 1] === numbers[i] + 1) {
+                        i++;
+                    }
+                    
+                    if (i - start >= 2) { // Диапазон из 3+ чисел
+                        ranges.push(`${numbers[start]}-${numbers[i]}`);
+                    } else {
+                        for (let j = start; j <= i; j++) {
+                            singles.push(numbers[j]);
+                        }
+                    }
+                    i++;
+                }
+                
+                let result = '';
+                if (ranges.length > 0) {
+                    result += 'R' + ranges.join('.');
+                }
+                if (singles.length > 0) {
+                    if (result) result += '|';
+                    result += 'S' + singles.join('.');
+                }
+                
+                return result;
+            }
+
+            deserializeHybrid(data) {
+                if (!data) return [];
+                
+                const numbers = [];
+                const parts = data.split('|');
+                
+                for (let part of parts) {
+                    const type = part[0];
+                    const content = part.slice(1);
+                    
+                    if (type === 'R') { // Диапазоны
+                        const ranges = content.split('.');
+                        for (let range of ranges) {
+                            const [start, end] = range.split('-').map(Number);
+                            for (let i = start; i <= end; i++) {
+                                numbers.push(i);
+                            }
+                        }
+                    } else if (type === 'S') { // Отдельные числа
+                        const singles = content.split('.').map(Number);
+                        numbers.push(...singles);
+                    }
+                }
+                
+                return numbers.sort((a, b) => a - b);
+            }
+        }
+
+        const compressor = new NumberSetCompressor();
+
+        // Функции для интерфейса
+        function testCompression() {
+            const input = document.getElementById('inputNumbers').value;
+            const resultDiv = document.getElementById('manualResult');
+            
+            try {
+                const numbers = input.split(',').map(n => parseInt(n.trim())).filter(n => n >= 1 && n <= 300);
+                if (numbers.length === 0) {
+                    throw new Error('Введите корректные числа от 1 до 300');
+                }
+                
+                const simple = compressor.simpleSerialize(numbers);
+                const compressed = compressor.serialize(numbers);
+                const decompressed = compressor.deserialize(compressed);
+                
+                const compressionRatio = simple.length / compressed.length;
+                const isValid = JSON.stringify(numbers.sort((a,b) => a-b)) === JSON.stringify(decompressed);
+                
+                resultDiv.innerHTML = `
+                    <div class="stats">
+                        <div class="stat-item">
+                            <div>Исходных чисел: ${numbers.length}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div>Простая сериализация: ${simple.length} символов</div>
+                        </div>
+                        <div class="stat-item">
+                            <div>Сжатая строка: ${compressed.length} символов</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="compression-ratio ${compressionRatio >= 2 ? 'good-ratio' : 'bad-ratio'}">
+                                Коэффициент сжатия: ${compressionRatio.toFixed(2)}x
+                            </div>
+                        </div>
+                    </div>
+                    <p><strong>Исходные числа:</strong> ${numbers.join(', ')}</p>
+                    <p><strong>Простая сериализация:</strong> ${simple}</p>
+                    <p><strong>Сжатая строка:</strong> ${compressed}</p>
+                    <p><strong>Восстановленные числа:</strong> ${decompressed.join(', ')}</p>
+                    <p><strong>Проверка корректности:</strong> ${isValid ? '✅ Успешно' : '❌ Ошибка'}</p>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Ошибка: ${error.message}</div>`;
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        function testDecompression() {
+            const input = document.getElementById('inputNumbers').value;
+            const resultDiv = document.getElementById('manualResult');
+            
+            try {
+                const decompressed = compressor.deserialize(input);
+                resultDiv.innerHTML = `
+                    <p><strong>Сжатая строка:</strong> ${input}</p>
+                    <p><strong>Восстановленные числа:</strong> ${decompressed.join(', ')}</p>
+                `;
+                resultDiv.style.display = 'block';
+            } catch (error) {
+                resultDiv.innerHTML = `<div class="error">Ошибка десериализации: ${error.message}</div>`;
+                resultDiv.style.display = 'block';
+            }
+        }
+
+        function generateRandom() {
+            const count = 50 + Math.floor(Math.random() * 100); // 50-150 чисел
+            const numbers = [];
+            while (numbers.length < count) {
+                const num = Math.floor(Math.random() * 300) + 1;
+                if (!numbers.includes(num)) {
+                    numbers.push(num);
+                }
+            }
+            document.getElementById('inputNumbers').value = numbers.join(',');
+        }
+
+        function runAllTests() {
+            const testCases = [
+                {
+                    name: "Простые короткие числа",
+                    numbers: [1, 2, 3, 4, 5]
+                },
+                {
+                    name: "Случайные 50 чисел",
+                    numbers: generateRandomArray(50)
+                },
+                {
+                    name: "Случайные 100 чисел", 
+                    numbers: generateRandomArray(100)
+                },
+                {
+                    name: "Случайные 500 чисел",
+                    numbers: generateRandomArray(500)
+                },
+                {
+                    name: "Случайные 1000 чисел (все уникальные невозможно, берем 300)",
+                    numbers: Array.from({length: 300}, (_, i) => i + 1)
+                },
+                {
+                    name: "Все числа из 1 знака (1-9)",
+                    numbers: [1, 2, 3, 4, 5, 6, 7, 8, 9]
+                },
+                {
+                    name: "Все числа из 2 знаков (10-99)", 
+                    numbers: Array.from({length: 90}, (_, i) => i + 10)
+                },
+                {
+                    name: "Все числа из 3 знаков (100-300)",
+                    numbers: Array.from({length: 201}, (_, i) => i + 100)
+                },
+                {
+                    name: "Каждое число по 3 раза - всего 900 (берем все уникальные)",
+                    numbers: Array.from({length: 300}, (_, i) => i + 1)
+                },
+                {
+                    name: "Последовательные числа (1-50)",
+                    numbers: Array.from({length: 50}, (_, i) => i + 1)
+                }
+            ];
+
+            let html = '<h3>Результаты тестирования:</h3>';
+            let totalTests = 0;
+            let passedTests = 0;
+
+            for (let testCase of testCases) {
+                totalTests++;
+                const simple = compressor.simpleSerialize(testCase.numbers);
+                const compressed = compressor.serialize(testCase.numbers);
+                const decompressed = compressor.deserialize(compressed);
+                
+                const compressionRatio = simple.length / compressed.length;
+                const isValid = JSON.stringify(testCase.numbers.sort((a,b) => a-b)) === JSON.stringify(decompressed);
+                const passed = isValid && compressionRatio >= 2.0;
+                
+                if (passed) passedTests++;
+
+                html += `
+                    <div class="test-case">
+                        <h4>${testCase.name} ${passed ? '✅' : '❌'}</h4>
+                        <div class="stats">
+                            <div class="stat-item">Чисел: ${testCase.numbers.length}</div>
+                            <div class="stat-item">Простая: ${simple.length} симв.</div>
+                            <div class="stat-item">Сжатая: ${compressed.length} симв.</div>
+                            <div class="stat-item">
+                                <span class="compression-ratio ${compressionRatio >= 2 ? 'good-ratio' : 'bad-ratio'}">
+                                    Сжатие: ${compressionRatio.toFixed(2)}x
+                                </span>
+                            </div>
+                        </div>
+                        <p><strong>Исходные:</strong> ${testCase.numbers.slice(0, 20).join(', ')}${testCase.numbers.length > 20 ? '...' : ''}</p>
+                        <p><strong>Простая сериализация:</strong> ${simple.slice(0, 100)}${simple.length > 100 ? '...' : ''}</p>
+                        <p><strong>Сжатая строка:</strong> ${compressed}</p>
+                        <p><strong>Корректность:</strong> ${isValid ? '✅ Верно' : '❌ Ошибка'}</p>
+                    </div>
+                `;
+            }
+
+            html += `
+                <div class="test-case" style="background: #e8f5e8; border-color: #28a745;">
+                    <h4>Итоговая статистика</h4>
+                    <p><strong>Пройдено тестов:</strong> ${passedTests} из ${totalTests}</p>
+                    <p><strong>Успешность:</strong> ${((passedTests/totalTests)*100).toFixed(1)}%</p>
+                </div>
+            `;
+
+            document.getElementById('testResults').innerHTML = html;
+        }
+
+        function generateRandomArray(size) {
+            const numbers = [];
+            const maxSize = Math.min(size, 300); // Не можем больше 300 уникальных чисел
+            while (numbers.length < maxSize) {
+                const num = Math.floor(Math.random() * 300) + 1;
+                if (!numbers.includes(num)) {
+                    numbers.push(num);
+                }
+            }
+            return numbers.sort((a, b) => a - b);
+        }
+
+        // Запускаем тесты при загрузке страницы
+        window.onload = function() {
+            runAllTests();
+        };
+    </script>
+</body>
+</html>
